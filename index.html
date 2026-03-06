@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SubSync — YouTube Subtitle Player</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #060810;
+    --nav:      #0a0e18;
+    --surface:  #0f1420;
+    --surface2: #141a28;
+    --border:   #1a2232;
+    --border2:  #222c3e;
+    --main-bg:  #0d1420;   /* slightly warmer for video area */
+    --sidebar-bg: #0a0f1c; /* darker for sidebar */
+    --info-bg:  #0b1018;   /* info panel */
+    --accent:   #4fffb0;
+    --accent2:  #ff5f6d;
+    --accent3:  #ffd166;
+    --text:     #dde4f0;
+    --muted:    #5a6680;
+    --muted2:   #3a4255;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --t1: #4fffb0;
+    --t2: #4fb8ff;
+    --t3: #ffb84f;
+    --nav-h:      52px;
+    --sidebar-w:  300px;
+    --sub-row-h:  50px;
+    --sub-gap:    6px;
+    /* Max height for video = all space minus 3 subtitle rows, gaps and padding */
+    --video-max-h: calc(100vh - var(--nav-h) - 3*var(--sub-row-h) - 2*var(--sub-gap) - 52px);
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--sans); }
+
+  /* grain */
+  body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    opacity: 0.5;
+  }
+
+  /* ── Nav ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: var(--nav-h);
+    background: var(--nav);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 20px; gap: 10px; z-index: 100;
+  }
+  .logo-mark {
+    width: 28px; height: 28px; background: var(--accent);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .logo-mark svg { width: 14px; height: 14px; }
+  .logo-text { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+  .logo-text em { color: var(--accent); font-style: normal; }
+  .nav-sep { flex: 1; }
+  .nav-status { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
+  .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--muted2); transition: background 0.4s, box-shadow 0.4s; }
+  .pulse.live { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); animation: pulsate 2s ease-in-out infinite; }
+  @keyframes pulsate {
+    0%,100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+    50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 8%,  transparent); }
+  }
+
+  /* ── Layout ── */
+  .layout {
+    position: fixed; top: var(--nav-h); bottom: 0; left: 0; right: 0;
+    display: flex; overflow: hidden;
+    align-items: stretch;
+  }
+
+  /* ── Main column ── */
+  .main-col {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column;
+    padding: 12px 12px 10px 16px; gap: var(--sub-gap);
+    overflow: hidden; align-items: flex-start;
+    background: var(--main-bg);
+    align-self: stretch;
+  }
+
+  .video-col {
+    display: flex; flex-direction: column;
+    gap: var(--sub-gap); flex-shrink: 0;
+  }
+
+  /* Info panel wrap - rightmost column */
+  .info-panel-wrap {
+    width: 360px; flex-shrink: 0;
+    background: var(--info-bg);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    align-self: stretch;
+    padding: 0;
+  }
+
+  .info-panel {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    height: 100%;
+  }
+
+  .info-panel-header {
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--info-bg);
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  }
+
+  .info-panel-tabs {
+    display: flex; gap: 2px;
+  }
+
+  .info-tab {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px;
+    padding: 4px 10px; border-radius: 5px; cursor: pointer;
+    border: none; background: transparent; color: var(--muted);
+    transition: all 0.15s;
+  }
+
+  .info-tab.active { background: var(--surface2); color: var(--text); }
+  .info-tab:not(.active):hover { color: var(--text); }
+
+  .info-panel-body {
+    flex: 1; overflow-y: auto; padding: 16px;
+  }
+
+  .info-panel-body::-webkit-scrollbar { width: 3px; }
+  .info-panel-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* Tab content */
+  .tab-content { display: none; flex-direction: column; gap: 18px; }
+  .tab-content.visible { display: flex; }
+
+  /* How to use */
+  .how-step {
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+
+  .step-num {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    color: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step-body { flex: 1; }
+
+  .step-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .step-desc {
+    font-size: 12px; color: var(--muted); line-height: 1.6;
+  }
+
+  .step-desc code {
+    font-family: var(--mono); font-size: 10px;
+    background: var(--surface2); border: 1px solid var(--border2);
+    padding: 1px 5px; border-radius: 3px; color: var(--accent);
+  }
+
+  .step-connector {
+    width: 1px; height: 14px;
+    background: var(--border2);
+    margin-left: 11px;
+  }
+
+  /* FAQ */
+  .faq-item { display: flex; flex-direction: column; gap: 5px; }
+
+  .faq-q {
+    font-size: 12px; font-weight: 600; color: var(--text);
+    display: flex; align-items: baseline; gap: 8px;
+  }
+
+  .faq-q::before {
+    content: 'Q';
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    color: var(--accent2); background: color-mix(in srgb, var(--accent2) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent2) 25%, transparent);
+    padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+  }
+
+  .faq-a {
+    font-size: 12px; color: var(--muted); line-height: 1.65;
+    padding-left: 24px;
+  }
+
+  .faq-a a { color: var(--accent); text-decoration: none; }
+  .faq-a a:hover { text-decoration: underline; }
+
+  .faq-divider { height: 1px; background: var(--border); }
+
+  /* About */
+  .about-block {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 14px 16px;
+    font-size: 12px; color: var(--muted); line-height: 1.7;
+  }
+
+  .about-block strong { color: var(--text); font-weight: 600; }
+
+  .about-accent {
+    color: var(--accent); font-weight: 600;
+  }
+
+  .tip-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: color-mix(in srgb, var(--accent3) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent3) 25%, transparent);
+    color: var(--accent3); font-size: 11px; font-family: var(--mono);
+    padding: 4px 10px; border-radius: 20px; margin-top: 4px;
+  }
+
+  /* ── Video: true 16:9, sized purely from height ── */
+  .video-wrapper {
+    /* Derive width from the max allowed height × 16/9 */
+    height: var(--video-max-h);
+    width: calc(var(--video-max-h) * 16 / 9);
+    /* Never spill outside the column */
+    max-width: 100%;
+    /* If column is narrower, shrink height to match */
+    aspect-ratio: 16 / 9;
+    flex-shrink: 0;
+    align-self: flex-start;
+    position: relative;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .video-wrapper #ytplayer {
+    position: absolute; inset: 0;
+    width: 100% !important; height: 100% !important; border: none;
+  }
+
+  .video-placeholder {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    background: var(--surface);
+  }
+  .video-placeholder svg { opacity: 0.18; color: var(--muted); }
+  .video-placeholder p { font-family: var(--mono); font-size: 12px; color: var(--muted); opacity: 0.55; }
+
+  /* ── Subtitle rows ── */
+  .subs-stack {
+    display: flex; flex-direction: column; gap: var(--sub-gap); flex-shrink: 0;
+    /* Match video width exactly */
+    width: calc(var(--video-max-h) * 16 / 9);
+    max-width: 100%;
+  }
+
+  .sub-row {
+    display: flex; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; height: var(--sub-row-h);
+    overflow: hidden; position: relative;
+    transition: border-color 0.3s, background 0.3s;
+  }
+  .sub-row.active {
+    border-color: color-mix(in srgb, var(--tc) 38%, transparent);
+    background: color-mix(in srgb, var(--tc) 4%, var(--surface));
+  }
+  .sub-track-tag {
+    width: 76px; min-width: 76px; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    border-right: 1px solid var(--border); padding: 8px; flex-shrink: 0;
+  }
+  .sub-track-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--tc);
+    opacity: 0.6; transition: opacity 0.3s, box-shadow 0.3s;
+  }
+  .sub-row.active .sub-track-dot { opacity: 1; box-shadow: 0 0 8px color-mix(in srgb, var(--tc) 55%, transparent); }
+  .sub-track-name {
+    font-family: var(--mono); font-size: 9px; color: var(--tc);
+    letter-spacing: 0.8px; text-transform: uppercase; text-align: center;
+    opacity: 0.75; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sub-content {
+    flex: 1; padding: 8px 32px 8px 14px;
+    font-size: 15px; font-weight: 500; color: var(--tc);
+    line-height: 1.4; font-family: var(--sans);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--tc) 18%, transparent);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sub-content:empty::before {
+    content: attr(data-ph); font-size: 10px; font-family: var(--mono);
+    color: var(--muted); font-weight: 400; text-shadow: none; opacity: 0.35;
+  }
+  .sub-x {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: transparent; border: none; color: var(--muted); cursor: pointer;
+    font-size: 11px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+    border-radius: 4px; transition: color 0.2s, background 0.2s; font-family: var(--mono);
+  }
+  .sub-x:hover { color: var(--accent2); background: rgba(255,95,109,0.1); }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-w); flex-shrink: 0;
+    background: var(--sidebar-bg); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto; overflow-x: hidden;
+    padding: 0; gap: 0;
+    align-self: stretch;
+    /* scroll starts from top */
+    scroll-behavior: smooth;
+  }
+  .sidebar::-webkit-scrollbar { width: 3px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .sidebar-section { display: flex; flex-direction: column; gap: 8px; padding: 14px 14px; }
+  .sidebar-label {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+  .sidebar-divider { height: 1px; background: var(--border); flex-shrink: 0; }
+
+  /* URL input */
+  .url-input {
+    width: 100%; background: var(--surface); border: 1px solid var(--border2);
+    color: var(--text); font-family: var(--mono); font-size: 11px;
+    padding: 9px 11px; border-radius: 6px; outline: none; transition: border-color 0.2s;
+  }
+  .url-input:focus { border-color: var(--accent); }
+  .url-input::placeholder { color: var(--muted); }
+
+  .load-btn {
+    width: 100%; background: var(--accent); color: #080b0f;
+    border: none; padding: 9px; font-family: var(--mono); font-size: 12px; font-weight: 700;
+    border-radius: 6px; cursor: pointer; letter-spacing: 0.5px;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .load-btn:hover { opacity: 0.85; }
+  .load-btn:active { transform: scale(0.98); }
+
+  .error-msg {
+    font-family: var(--mono); font-size: 10px; color: var(--accent2);
+    background: rgba(255,95,109,0.07); border: 1px solid rgba(255,95,109,0.18);
+    border-radius: 6px; padding: 7px 10px; display: none; line-height: 1.5;
+  }
+
+  /* ── Backend subtitle results ── */
+  .library-panel {
+    display: none;
+    flex-direction: column; gap: 6px;
+  }
+  .library-panel.visible { display: flex; }
+
+  .library-header {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; color: var(--accent3);
+    letter-spacing: 0.5px;
+  }
+  .library-header svg { flex-shrink: 0; }
+
+  .library-item {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 8px 10px; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .library-item:hover {
+    border-color: color-mix(in srgb, var(--accent3) 50%, transparent);
+    background: color-mix(in srgb, var(--accent3) 5%, var(--surface2));
+  }
+  .library-item.added {
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+    background: color-mix(in srgb, var(--accent) 5%, var(--surface2));
+    cursor: default;
+  }
+  .lib-lang-badge {
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    background: color-mix(in srgb, var(--accent3) 15%, transparent);
+    color: var(--accent3); border-radius: 4px;
+    padding: 2px 6px; letter-spacing: 0.5px; text-transform: uppercase; flex-shrink: 0;
+  }
+  .library-item.added .lib-lang-badge { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+  .lib-info { flex: 1; min-width: 0; }
+  .lib-title { font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lib-meta { font-family: var(--mono); font-size: 9px; color: var(--muted); margin-top: 2px; }
+  .lib-add-btn {
+    font-family: var(--mono); font-size: 9px; color: var(--muted);
+    background: transparent; border: 1px solid var(--border2);
+    border-radius: 4px; padding: 3px 7px; cursor: pointer; flex-shrink: 0;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .lib-add-btn:hover { color: var(--accent3); border-color: var(--accent3); }
+  .library-item.added .lib-add-btn { color: var(--accent); border-color: var(--accent); cursor: default; }
+
+  .library-searching {
+    display: none; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+  }
+  .library-searching.visible { display: flex; }
+
+  .spinner {
+    width: 12px; height: 12px; border: 1.5px solid var(--border2);
+    border-top-color: var(--accent3); border-radius: 50%;
+    animation: spin 0.7s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .library-none {
+    display: none; font-family: var(--mono); font-size: 10px;
+    color: var(--muted); opacity: 0.6; text-align: center; padding: 4px 0;
+  }
+  .library-none.visible { display: block; }
+
+  /* Track cards */
+  .track-card {
+    background: var(--surface2); border: 1px dashed var(--border2);
+    border-radius: 8px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 7px;
+    transition: border-color 0.2s, border-style 0.2s;
+  }
+  .track-card.loaded { border-style: solid; border-color: color-mix(in srgb, var(--tc) 45%, transparent); }
+  input[type="file"] { display: none; }
+
+  .track-card-header { display: flex; align-items: center; gap: 7px; }
+  .tc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tc); flex-shrink: 0; }
+  .tc-num { font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--tc); letter-spacing: 1px; text-transform: uppercase; flex: 1; }
+  .tc-clear { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 3px; font-family: var(--mono); transition: color 0.2s; }
+  .tc-clear:hover { color: var(--accent2); }
+
+  .tc-name {
+    background: transparent; border: none; border-bottom: 1px solid var(--border2);
+    color: var(--text); font-family: var(--sans); font-size: 12px;
+    padding: 3px 0; outline: none; width: 100%; border-radius: 0; transition: border-color 0.2s;
+  }
+  .tc-name:focus { border-bottom-color: var(--tc); }
+  .tc-name::placeholder { color: var(--muted); font-size: 11px; }
+
+  .tc-upload-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    cursor: pointer; padding: 4px 0; transition: color 0.2s;
+  }
+  .tc-upload-btn:hover { color: var(--tc); }
+
+  .tc-status { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.7; }
+  .tc-status.ok { color: var(--tc); opacity: 1; }
+
+  /* Status pills */
+  .status-items { display: flex; flex-direction: column; gap: 6px; }
+  .status-item { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .s-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted2); flex-shrink: 0; transition: background 0.3s, box-shadow 0.3s; }
+  .s-dot.on { background: var(--accent); box-shadow: 0 0 5px var(--accent); }
+
+  /* Patreon link */
+  .patreon-link {
+    display: flex; align-items: center; gap: 8px;
+    margin: 0 14px 14px;
+    padding: 9px 12px;
+    background: rgba(249,104,84,0.07);
+    border: 1px solid rgba(249,104,84,0.2);
+    border-radius: 8px; text-decoration: none;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .patreon-link:hover { background: rgba(249,104,84,0.12); border-color: rgba(249,104,84,0.35); }
+  .patreon-link svg { flex-shrink: 0; }
+  .patreon-link span { font-family: var(--mono); font-size: 10px; color: #f96854; letter-spacing: 0.3px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#080b0f" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+  </div>
+  <span class="logo-text"><em>Sub</em>Sync</span>
+  <div class="nav-sep"></div>
+  <div class="nav-status">
+    <div class="pulse" id="navPulse"></div>
+    <span id="navLabel">idle</span>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- LEFT: video + subtitles -->
+  <div class="main-col">
+    <div class="video-col">
+
+      <div class="video-wrapper">
+        <div class="video-placeholder" id="placeholder">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <rect x="2" y="2" width="20" height="20" rx="4"/>
+            <polygon points="10 8 16 12 10 16 10 8"/>
+          </svg>
+          <p>paste a YouTube URL in the panel →</p>
+        </div>
+        <div id="ytplayer"></div>
+      </div>
+
+      <div class="subs-stack">
+        <div class="sub-row" id="row0" style="--tc: var(--t1)">
+          <div class="sub-track-tag"><div class="sub-track-dot"></div><span class="sub-track-name" id="rowLbl0">Track 1</span></div>
+          <div class="sub-content" id="sub0" data-ph="no subtitle loaded"></div>
+          <button class="sub-x" onclick="clearTrack(0)" title="Clear">✕</button>
+        </div>
+        <div class="sub-row" id="row1" style="--tc: var(--t2)">
+          <div class="sub-track-tag"><div class="sub-track-dot"></div><span class="sub-track-name" id="rowLbl1">Track 2</span></div>
+          <div class="sub-content" id="sub1" data-ph="no subtitle loaded"></div>
+          <button class="sub-x" onclick="clearTrack(1)" title="Clear">✕</button>
+        </div>
+        <div class="sub-row" id="row2" style="--tc: var(--t3)">
+          <div class="sub-track-tag"><div class="sub-track-dot"></div><span class="sub-track-name" id="rowLbl2">Track 3</span></div>
+          <div class="sub-content" id="sub2" data-ph="no subtitle loaded"></div>
+          <button class="sub-x" onclick="clearTrack(2)" title="Clear">✕</button>
+        </div>
+      </div>
+
+    </div><!-- /video-col -->
+  </div><!-- /main-col -->
+
+  <!-- RIGHT: sidebar -->
+  <div class="sidebar">
+
+    <div class="sidebar-section" style="padding-top: 16px;">
+      <div class="sidebar-label">Video URL</div>
+      <input class="url-input" type="text" id="youtubeUrl" placeholder="https://youtube.com/watch?v=...">
+      <button class="load-btn" onclick="loadVideo()">▶ Load Video</button>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+
+    <div class="sidebar-section" id="librarySection" style="display:none">
+      <div class="sidebar-label">Subtitles in Library</div>
+      <div class="library-searching" id="libSearching">
+        <div class="spinner"></div>
+        <span>Searching library…</span>
+      </div>
+      <div class="library-none" id="libNone">No subtitles found for this video</div>
+      <div class="library-panel" id="libResults"></div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Upload Your Own</div>
+
+      <div class="track-card" id="card0" style="--tc: var(--t1)">
+        <div class="track-card-header">
+          <div class="tc-dot"></div><span class="tc-num">Track 1</span>
+          <button class="tc-clear" onclick="clearTrack(0)">✕</button>
+        </div>
+        <input class="tc-name" type="text" id="lbl0" placeholder="Label (e.g. English)" value="Track 1" oninput="syncLabel(0)">
+        <label class="tc-upload-btn" for="file0">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Upload .srt file
+        </label>
+        <input type="file" id="file0" accept=".srt" onchange="loadTrack(0,this)">
+        <span class="tc-status" id="st0">No file loaded</span>
+      </div>
+
+      <div class="track-card" id="card1" style="--tc: var(--t2)">
+        <div class="track-card-header">
+          <div class="tc-dot"></div><span class="tc-num">Track 2</span>
+          <button class="tc-clear" onclick="clearTrack(1)">✕</button>
+        </div>
+        <input class="tc-name" type="text" id="lbl1" placeholder="Label (e.g. Thai)" value="Track 2" oninput="syncLabel(1)">
+        <label class="tc-upload-btn" for="file1">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Upload .srt file
+        </label>
+        <input type="file" id="file1" accept=".srt" onchange="loadTrack(1,this)">
+        <span class="tc-status" id="st1">No file loaded</span>
+      </div>
+
+      <div class="track-card" id="card2" style="--tc: var(--t3)">
+        <div class="track-card-header">
+          <div class="tc-dot"></div><span class="tc-num">Track 3</span>
+          <button class="tc-clear" onclick="clearTrack(2)">✕</button>
+        </div>
+        <input class="tc-name" type="text" id="lbl2" placeholder="Label (e.g. Japanese)" value="Track 3" oninput="syncLabel(2)">
+        <label class="tc-upload-btn" for="file2">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Upload .srt file
+        </label>
+        <input type="file" id="file2" accept=".srt" onchange="loadTrack(2,this)">
+        <span class="tc-status" id="st2">No file loaded</span>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Status</div>
+      <div class="status-items">
+        <div class="status-item"><div class="s-dot" id="dVideo"></div><span id="tVideo">No video loaded</span></div>
+        <div class="status-item"><div class="s-dot" id="dSync"></div><span id="tSync">Sync idle</span></div>
+        <div class="status-item"><div class="s-dot" id="dTracks"></div><span id="tTracks">0 tracks loaded</span></div>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <a class="patreon-link" href="https://www.patreon.com/" target="_blank">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#f96854"><path d="M14.82 2.41c3.96 0 7.18 3.24 7.18 7.21 0 3.96-3.22 7.18-7.18 7.18-3.97 0-7.19-3.22-7.19-7.18 0-3.97 3.22-7.21 7.19-7.21zM2 21.6h3.5V2.4H2V21.6z"/></svg>
+      <span>Support on Patreon</span>
+    </a>
+
+  </div><!-- /sidebar -->
+
+  <!-- RIGHT: info panel -->
+  <div class="info-panel-wrap">
+    <div class="info-panel">
+      <div class="info-panel-header">
+        <div class="info-panel-tabs">
+          <button class="info-tab active" onclick="switchTab('how')" id="tab-how">How to Use</button>
+          <button class="info-tab" onclick="switchTab('faq')" id="tab-faq">FAQ</button>
+          <button class="info-tab" onclick="switchTab('about')" id="tab-about">About</button>
+        </div>
+      </div>
+      <div class="info-panel-body">
+
+        <!-- HOW TO USE -->
+        <div class="tab-content visible" id="content-how">
+          <div class="how-step">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Paste a YouTube URL</div>
+              <div class="step-desc">Copy any YouTube video link and paste it into the <strong>Video URL</strong> field on the right panel, then click <strong>Load Video</strong>.</div>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="how-step">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Check the subtitle library</div>
+              <div class="step-desc">After loading, SubSync automatically searches the library for subtitles matching that video. If found, they appear under <strong>Subtitles in Library</strong> — just click <code>+ Add</code> to load them instantly.</div>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="how-step">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Or upload your own .srt file</div>
+              <div class="step-desc">Have your own subtitle file? Use <strong>Upload Your Own</strong> in the right panel. Each of the 3 tracks accepts its own <code>.srt</code> file — you can mix library and uploaded tracks freely.</div>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="how-step">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Label your tracks</div>
+              <div class="step-desc">Click the label field on any track card and rename it — <em>English</em>, <em>Thai</em>, <em>Notes</em>, etc. The label shows in the subtitle row below the video.</div>
+            </div>
+          </div>
+          <div class="step-connector"></div>
+          <div class="how-step">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <div class="step-title">Press play and watch</div>
+              <div class="step-desc">All active subtitle tracks sync in real time. The row glows when a cue is active. Use <strong>✕</strong> to clear any track.</div>
+            </div>
+          </div>
+          <div class="tip-pill">💡 Up to 3 subtitle tracks simultaneously</div>
+        </div>
+
+        <!-- FAQ -->
+        <div class="tab-content" id="content-faq">
+          <div class="faq-item">
+            <div class="faq-q">Why does the video say "Watch on YouTube" or show an error?</div>
+            <div class="faq-a">Some videos disable embedding — a restriction set by the video owner, not SubSync. Try a different video; most public music videos and tutorials work fine.</div>
+          </div>
+          <div class="faq-divider"></div>
+          <div class="faq-item">
+            <div class="faq-q">Where do I find .srt subtitle files?</div>
+            <div class="faq-a">Sites like <a href="https://www.rentanadviser.com/subtitles/subtitlesforsongs.aspx" target="_blank">RentAnAdviser</a> and <a href="https://opensubtitles.org" target="_blank">OpenSubtitles</a> have large libraries. You can also export from video editing software.</div>
+          </div>
+          <div class="faq-divider"></div>
+          <div class="faq-item">
+            <div class="faq-q">The subtitles are out of sync — what do I do?</div>
+            <div class="faq-a">The SRT timestamps need to match the specific video version. Different uploads of the same video (official vs remaster) may have different timings.</div>
+          </div>
+          <div class="faq-divider"></div>
+          <div class="faq-item">
+            <div class="faq-q">Can I use this on my phone?</div>
+            <div class="faq-a">SubSync is currently optimised for desktop browsers. Mobile support is planned in a future update.</div>
+          </div>
+          <div class="faq-divider"></div>
+          <div class="faq-item">
+            <div class="faq-q">Is my data saved anywhere?</div>
+            <div class="faq-a">Uploaded files are only in your browser's memory for the current session. Library subtitles are stored on our server tied to video ID only — no personal data is collected.</div>
+          </div>
+        </div>
+
+        <!-- ABOUT -->
+        <div class="tab-content" id="content-about">
+          <div class="about-block">
+            <strong>SubSync</strong> is a free tool for watching YouTube videos with multiple subtitle tracks simultaneously — perfect for <span class="about-accent">language learners</span>, translators, and anyone following along in more than one language.<br><br>
+            Built as a side project. If it's useful to you, consider supporting on Patreon — it helps keep the server running and motivates new features.
+          </div>
+          <div class="about-block">
+            <strong>Current features</strong><br><br>
+            • Up to 3 simultaneous subtitle tracks<br>
+            • Community subtitle library (by video ID)<br>
+            • Upload your own .srt files<br>
+            • Real-time sync at 80ms intervals<br>
+            • Rename tracks with custom labels
+          </div>
+          <div class="about-block">
+            <strong>Planned features</strong><br><br>
+            • User accounts to save subtitle sets<br>
+            • Submit subtitles to the community library<br>
+            • Subtitle offset adjustment slider<br>
+            • Mobile layout
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /info-panel -->
+  </div>
+
+</div><!-- /layout -->
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+  const tracks = [[], [], []];
+  let player = null, syncInterval = null, currentVideoId = null;
+
+  // ── Info panel tabs ──
+  function switchTab(name) {
+    ['how','faq','about'].forEach(t => {
+      document.getElementById('tab-'+t).classList.toggle('active', t === name);
+      document.getElementById('content-'+t).classList.toggle('visible', t === name);
+    });
+  }
+
+  // ── Label sync ──
+  function syncLabel(i) {
+    const v = document.getElementById('lbl'+i).value.trim() || ('Track '+(i+1));
+    document.getElementById('rowLbl'+i).textContent = v;
+  }
+
+  // ── Manual track loading ──
+  function loadTrack(i, input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      tracks[i] = parseSRT(reader.result);
+      document.getElementById('st'+i).textContent = '✓ '+file.name+' — '+tracks[i].length+' cues';
+      document.getElementById('st'+i).className = 'tc-status ok';
+      document.getElementById('card'+i).classList.add('loaded');
+      refreshStatus();
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  function clearTrack(i) {
+    tracks[i] = [];
+    document.getElementById('st'+i).textContent = 'No file loaded';
+    document.getElementById('st'+i).className = 'tc-status';
+    document.getElementById('card'+i).classList.remove('loaded');
+    document.getElementById('file'+i).value = '';
+    document.getElementById('sub'+i).textContent = '';
+    document.getElementById('row'+i).classList.remove('active');
+    refreshStatus();
+  }
+
+  function refreshStatus() {
+    const n = tracks.filter(t => t.length > 0).length;
+    sdot('dTracks', n > 0);
+    setText('tTracks', n+' track'+(n!==1?'s':'')+' loaded');
+  }
+
+  // ── Library: simulate backend lookup ──
+  // When you have a real backend, replace this function with a fetch() call:
+  // const res = await fetch(`/api/subtitles?videoId=${videoId}`);
+  // const data = await res.json(); // expected: [{lang, label, cues_count, id}, ...]
+  function fetchLibrarySubtitles(videoId) {
+    // MOCK DATA — replace with real API call
+    const MOCK_DB = {
+      'dQw4w9WgXcQ': [
+        { id: 'sub_001', lang: 'EN', label: 'English', cues: 46 },
+        { id: 'sub_002', lang: 'TH', label: 'Thai', cues: 46 },
+      ],
+    };
+    return new Promise(resolve => {
+      setTimeout(() => resolve(MOCK_DB[videoId] || []), 800); // simulate network delay
+    });
+  }
+
+  // Also simulate fetching the actual SRT content from the backend
+  // Replace with: fetch(`/api/subtitles/${id}/content`)
+  function fetchSubtitleContent(subId) {
+    const MOCK_CONTENT = {
+      'sub_001': `1\n00:00:18,800 --> 00:00:22,600\nWe're no strangers to love\n\n2\n00:00:22,800 --> 00:00:26,700\nYou know the rules and so do I\n\n3\n00:00:26,900 --> 00:00:30,700\nA full commitment's what I'm thinking of\n\n4\n00:00:30,900 --> 00:00:34,700\nYou wouldn't get this from any other guy\n\n5\n00:00:34,900 --> 00:00:39,600\nI just want to tell you how I'm feeling\n\n6\n00:00:39,800 --> 00:00:43,100\nGotta make you understand\n\n7\n00:00:43,300 --> 00:00:46,900\nNever gonna give you up, never gonna let you down\n\n8\n00:00:47,100 --> 00:00:51,400\nNever gonna run around and desert you\n\n9\n00:00:51,600 --> 00:00:55,300\nNever gonna make you cry, never gonna say goodbye\n\n10\n00:00:55,500 --> 00:01:00,400\nNever gonna tell a lie and hurt you`,
+      'sub_002': `1\n00:00:18,800 --> 00:00:22,600\nเราไม่ใช่คนแปลกหน้าต่อความรัก\n\n2\n00:00:22,800 --> 00:00:26,700\nเธอรู้กฎ และฉันก็รู้เช่นกัน\n\n3\n00:00:26,900 --> 00:00:30,700\nการอุทิศตนอย่างเต็มที่คือสิ่งที่ฉันคิดถึง\n\n4\n00:00:30,900 --> 00:00:34,700\nเธอจะไม่ได้สิ่งนี้จากผู้ชายคนอื่น\n\n5\n00:00:34,900 --> 00:00:39,600\nฉันแค่อยากบอกเธอว่าฉันรู้สึกอย่างไร\n\n6\n00:00:39,800 --> 00:00:43,100\nต้องทำให้เธอเข้าใจ\n\n7\n00:00:43,300 --> 00:00:46,900\nจะไม่มีวันยอมแพ้เธอ จะไม่ทำให้เธอผิดหวัง\n\n8\n00:00:47,100 --> 00:00:51,400\nจะไม่มีวันหนีและทอดทิ้งเธอ\n\n9\n00:00:51,600 --> 00:00:55,300\nจะไม่ทำให้เธอร้องไห้ จะไม่บอกลา\n\n10\n00:00:55,500 --> 00:01:00,400\nจะไม่โกหกและทำร้ายเธอ`,
+    };
+    return new Promise(resolve => setTimeout(() => resolve(MOCK_CONTENT[subId] || ''), 300));
+  }
+
+  async function showLibraryResults(videoId) {
+    const section = document.getElementById('librarySection');
+    const searching = document.getElementById('libSearching');
+    const none = document.getElementById('libNone');
+    const results = document.getElementById('libResults');
+
+    section.style.display = 'flex';
+    section.style.flexDirection = 'column';
+    section.style.gap = '8px';
+    searching.classList.add('visible');
+    none.classList.remove('visible');
+    results.classList.remove('visible');
+    results.innerHTML = '';
+
+    const subs = await fetchLibrarySubtitles(videoId);
+
+    searching.classList.remove('visible');
+
+    if (!subs.length) {
+      none.classList.add('visible');
+      return;
+    }
+
+    results.classList.add('visible');
+    subs.forEach(sub => {
+      const item = document.createElement('div');
+      item.className = 'library-item';
+      item.id = 'libitem_' + sub.id;
+      item.innerHTML = `
+        <span class="lib-lang-badge">${sub.lang}</span>
+        <div class="lib-info">
+          <div class="lib-title">${sub.label}</div>
+          <div class="lib-meta">${sub.cues} cues</div>
+        </div>
+        <button class="lib-add-btn" onclick="addLibraryTrack('${sub.id}','${sub.label}')">+ Add</button>
+      `;
+      results.appendChild(item);
+    });
+  }
+
+  async function addLibraryTrack(subId, label) {
+    // Find a free track slot
+    const slot = tracks.findIndex(t => t.length === 0);
+    if (slot === -1) { showErr('All 3 track slots are full. Clear one first.'); return; }
+
+    // Mark item as loading
+    const item = document.getElementById('libitem_' + subId);
+    if (item) item.querySelector('.lib-add-btn').textContent = '…';
+
+    const content = await fetchSubtitleContent(subId);
+    if (!content) { showErr('Could not load subtitle content.'); return; }
+
+    tracks[slot] = parseSRT(content);
+    // Update the label
+    document.getElementById('lbl'+slot).value = label;
+    syncLabel(slot);
+    document.getElementById('st'+slot).textContent = '✓ '+label+' (library) — '+tracks[slot].length+' cues';
+    document.getElementById('st'+slot).className = 'tc-status ok';
+    document.getElementById('card'+slot).classList.add('loaded');
+    refreshStatus();
+
+    // Mark library item as added
+    if (item) {
+      item.classList.add('added');
+      item.querySelector('.lib-add-btn').textContent = '✓';
+    }
+  }
+
+  // ── YouTube API ──
+  function onYouTubeIframeAPIReady() {}
+
+  function extractVideoId(url) {
+    for (const p of [/[?&]v=([^&#]+)/, /youtu\.be\/([^?&#]+)/, /embed\/([^?&#]+)/, /shorts\/([^?&#]+)/]) {
+      const m = url.match(p);
+      if (m) return m[1];
+    }
+    return null;
+  }
+
+  function loadVideo() {
+    hideErr();
+    const url = document.getElementById('youtubeUrl').value.trim();
+    if (!url) { showErr('Please paste a YouTube URL.'); return; }
+    const id = extractVideoId(url);
+    if (!id) { showErr('Could not find a video ID in that URL.'); return; }
+
+    currentVideoId = id;
+    document.getElementById('placeholder').style.display = 'none';
+
+    // Trigger library lookup
+    showLibraryResults(id);
+
+    if (player) {
+      player.loadVideoById(id);
+    } else {
+      player = new YT.Player('ytplayer', {
+        videoId: id,
+        playerVars: { autoplay: 1, rel: 0, modestbranding: 1, origin: window.location.origin || 'https://localhost' },
+        events: {
+          onReady: () => { sdot('dVideo', true); setText('tVideo', 'Video ready'); },
+          onStateChange: e => {
+            const on = e.data === YT.PlayerState.PLAYING;
+            sdot('dSync', on); setText('tSync', on ? 'Syncing…' : 'Sync paused');
+            document.getElementById('navPulse').className = 'pulse' + (on ? ' live' : '');
+            setText('navLabel', on ? 'live' : 'paused');
+          },
+          onError: e => {
+            const m = {2:'Invalid ID',5:'HTML5 error',100:'Not found',101:'Embed blocked',150:'Embed blocked'};
+            showErr((m[e.data]||'YouTube error '+e.data)+' — try another video');
+            sdot('dVideo', false); setText('tVideo', 'Error');
+          }
+        }
+      });
+    }
+    sdot('dVideo', false); setText('tVideo', 'Loading…');
+    startSync();
+  }
+
+  // ── Sync loop ──
+  function startSync() {
+    if (syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(() => {
+      if (!player || typeof player.getCurrentTime !== 'function') return;
+      try {
+        const t = player.getCurrentTime();
+        tracks.forEach((subs, i) => {
+          const sub = subs.find(s => t >= s.start && t <= s.end);
+          const el = document.getElementById('sub'+i);
+          const row = document.getElementById('row'+i);
+          const txt = sub ? sub.text : '';
+          if (el.textContent !== txt) { el.textContent = txt; row.classList.toggle('active', !!txt); }
+        });
+      } catch(e) {}
+    }, 80);
+  }
+
+  // ── SRT parser ──
+  function parseSRT(data) {
+    return data.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim()
+      .split(/\n\s*\n/)
+      .map(b => {
+        const lines = b.trim().split('\n');
+        const tl = lines.find(l => l.includes('-->'));
+        if (!tl) return null;
+        const ti = lines.indexOf(tl), parts = tl.split('-->');
+        if (parts.length < 2) return null;
+        const text = lines.slice(ti+1).join(' ').replace(/<[^>]+>/g,'').trim();
+        return { start: toSec(parts[0].trim()), end: toSec(parts[1].trim()), text };
+      }).filter(x => x && x.text);
+  }
+
+  function toSec(t) {
+    const p = t.replace(',','.').split(':');
+    return p.length === 3 ? +p[0]*3600 + +p[1]*60 + parseFloat(p[2]) : 0;
+  }
+
+  // ── Helpers ──
+  function sdot(id, on) { document.getElementById(id).className = 's-dot'+(on?' on':''); }
+  function setText(id, t) { document.getElementById(id).textContent = t; }
+  function showErr(msg) { const e=document.getElementById('errorMsg'); e.textContent='⚠ '+msg; e.style.display='block'; }
+  function hideErr() { document.getElementById('errorMsg').style.display='none'; }
+</script>
+</body>
+</html>
