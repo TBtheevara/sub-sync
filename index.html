@@ -3,7 +3,64 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SubSync — YouTube Subtitle Player</title>
+
+<!-- ── Primary SEO ── -->
+<title>SubSync — Watch YouTube Videos with Multiple Subtitles Simultaneously</title>
+<meta name="description" content="SubSync lets you watch any YouTube video with up to 3 subtitle tracks at the same time. Perfect for language learners, translators, and bilingual viewers. Free, no sign-up required.">
+<meta name="keywords" content="youtube subtitle player, multiple subtitles youtube, dual subtitles, language learning youtube, srt player, bilingual subtitles, youtube dual language, subtitle sync, watch youtube with subtitles">
+<meta name="author" content="SubSync">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://sub-sync.netlify.app/">
+<meta name="theme-color" content="#080b0f">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234fffb0'/%3E%3Cpolygon points='10,8 24,16 10,24' fill='%23080b0f'/%3E%3C/svg%3E">
+
+<!-- ── Open Graph (Facebook, LINE, Discord previews) ── -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://sub-sync.netlify.app/">
+<meta property="og:title" content="SubSync — Watch YouTube with Multiple Subtitles">
+<meta property="og:description" content="Load any YouTube video and display up to 3 subtitle tracks simultaneously. Great for language learning and translation. Free tool, no sign-up.">
+<meta property="og:image" content="https://sub-sync.netlify.app/og-image.png">
+<meta property="og:site_name" content="SubSync">
+<meta property="og:locale" content="en_US">
+
+<!-- ── Twitter / X Card ── -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://sub-sync.netlify.app/">
+<meta name="twitter:title" content="SubSync — Watch YouTube with Multiple Subtitles">
+<meta name="twitter:description" content="Load any YouTube video and display up to 3 subtitle tracks simultaneously. Perfect for language learners. Free, no sign-up.">
+<meta name="twitter:image" content="https://sub-sync.netlify.app/og-image.png">
+
+<!-- ── Structured Data (Google rich results) ── -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "SubSync",
+  "url": "https://sub-sync.netlify.app/",
+  "description": "Watch YouTube videos with up to 3 simultaneous subtitle tracks. Upload your own SRT files or pick from the community library. Free tool for language learners and translators.",
+  "applicationCategory": "EducationApplication",
+  "operatingSystem": "Web Browser",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "featureList": [
+    "Up to 3 simultaneous subtitle tracks",
+    "Upload custom SRT subtitle files",
+    "Community subtitle library",
+    "Real-time subtitle sync",
+    "Support for any YouTube video"
+  ],
+  "screenshot": "https://sub-sync.netlify.app/og-image.png",
+  "author": {
+    "@type": "Person",
+    "name": "SubSync"
+  }
+}
+</script>
+
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -80,7 +137,9 @@
 
   /* ── Main column ── */
   .main-col {
-    flex: 1; min-width: 0;
+    /* Fixed width = video width + padding */
+    width: calc(var(--video-max-h) * 16 / 9 + 28px);
+    flex-shrink: 0;
     display: flex; flex-direction: column;
     padding: 12px 12px 10px 16px; gap: var(--sub-gap);
     overflow: hidden; align-items: flex-start;
@@ -95,7 +154,8 @@
 
   /* Info panel wrap - rightmost column */
   .info-panel-wrap {
-    width: 360px; flex-shrink: 0;
+    flex: 1;
+    min-width: 200px; max-width: 480px;
     background: var(--info-bg);
     border-left: 1px solid var(--border);
     display: flex; flex-direction: column;
@@ -478,6 +538,41 @@
   .patreon-link:hover { background: rgba(249,104,84,0.12); border-color: rgba(249,104,84,0.35); }
   .patreon-link svg { flex-shrink: 0; }
   .patreon-link span { font-family: var(--mono); font-size: 10px; color: #f96854; letter-spacing: 0.3px; }
+
+
+  /* ── Responsive breakpoints ── */
+
+  /* Below ~900px: info panel disappears, sidebar expands */
+  @media (max-width: 900px) {
+    .info-panel-wrap {
+      display: none;
+    }
+    .sidebar {
+      max-width: 100%;
+    }
+  }
+
+  /* Below ~650px: sidebar disappears too */
+  @media (max-width: 650px) {
+    .sidebar {
+      display: none;
+    }
+  }
+
+  /* Below ~500px: video column becomes fluid (fills full width) */
+  @media (max-width: 500px) {
+    .main-col {
+      width: 100%;
+      flex-shrink: 1;
+    }
+    .subs-stack {
+      width: 100%;
+    }
+    .video-wrapper {
+      width: 100%;
+      height: auto;
+    }
+  }
 </style>
 </head>
 <body>
@@ -738,6 +833,7 @@
   const tracks = [[], [], []];
   let player = null, syncInterval = null, currentVideoId = null;
 
+
   // ── Info panel tabs ──
   function switchTab(name) {
     ['how','faq','about'].forEach(t => {
@@ -973,5 +1069,6 @@
   function showErr(msg) { const e=document.getElementById('errorMsg'); e.textContent='⚠ '+msg; e.style.display='block'; }
   function hideErr() { document.getElementById('errorMsg').style.display='none'; }
 </script>
+
 </body>
 </html>
