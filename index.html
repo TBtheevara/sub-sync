@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="google-site-verification" content="nPstrunjslv-JwBS13ObMn_0iEILAS_JVY0KW5_a8CE" />
 
 <!-- ── Primary SEO ── -->
 <title>SubSync — Watch YouTube Videos with Multiple Subtitles Simultaneously</title>
@@ -543,40 +542,110 @@
 
   /* ── Responsive breakpoints ── */
 
-  /* Below ~900px: info panel disappears, sidebar expands */
+  /* Tablet: hide info panel */
   @media (max-width: 900px) {
-    .info-panel-wrap {
-      display: none;
-    }
-    .sidebar {
-      max-width: 100%;
-    }
+    .info-panel-wrap { display: none; }
+    .sidebar { max-width: 100%; }
   }
 
-  /* Below ~650px: sidebar disappears too */
-  @media (max-width: 650px) {
-    .sidebar {
-      display: none;
-    }
-  }
+  /* Mobile: full vertical layout */
+  @media (max-width: 660px) {
 
-  /* Below ~500px: video column becomes fluid (fills full width) */
-  @media (max-width: 500px) {
+    /* Layout becomes vertical, scrollable */
+    .layout {
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+      align-items: stretch;
+    }
+
+    /* Video column: full width, auto height */
     .main-col {
       width: 100%;
-      flex-shrink: 1;
-    }
-    .subs-stack {
-      width: 100%;
-    }
-    .video-wrapper {
-      width: 100%;
+      flex-shrink: 0;
+      padding: 8px 8px 6px 8px;
+      gap: 6px;
+      overflow: visible;
       height: auto;
     }
+
+    /* Video: full width, natural 16:9 height */
+    .video-wrapper {
+      width: 100% !important;
+      height: auto !important;
+      aspect-ratio: 16 / 9;
+      border-radius: 8px;
+    }
+
+    /* Subtitle rows: full width */
+    .subs-stack {
+      width: 100% !important;
+    }
+
+    .sub-row { height: 44px; }
+    .sub-track-tag { width: 60px; min-width: 60px; }
+    .sub-track-name { font-size: 8px; }
+    .sub-content { font-size: 13px; }
+
+    /* Sidebar: hidden by default, slides in as drawer */
+    .sidebar {
+      display: none;
+      position: fixed;
+      top: var(--nav-h); right: 0; bottom: 0;
+      width: 300px;
+      max-width: 90vw;
+      z-index: 150;
+      box-shadow: -8px 0 32px rgba(0,0,0,0.6);
+      overflow-y: auto;
+    }
+
+    .sidebar.open { display: flex; }
+
+    /* Info panel: hidden on mobile */
+    .info-panel-wrap { display: none; }
+
+    /* Drawer backdrop */
+    .drawer-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 140;
+    }
+    .drawer-backdrop.open { display: block; }
+
+    /* Floating action button */
+    .fab {
+      display: flex;
+      position: fixed;
+      bottom: 20px; right: 20px;
+      width: 48px; height: 48px;
+      background: var(--accent);
+      color: #080b0f;
+      border: none; border-radius: 50%;
+      cursor: pointer; font-size: 20px;
+      align-items: center; justify-content: center;
+      box-shadow: 0 4px 20px rgba(79,255,176,0.3);
+      z-index: 200;
+      transition: transform 0.2s;
+    }
+    .fab:active { transform: scale(0.92); }
+  }
+
+  /* Desktop: hide mobile-only elements */
+  @media (min-width: 661px) {
+    .fab { display: none; }
+    .drawer-backdrop { display: none !important; }
   }
 </style>
 </head>
 <body>
+
+<!-- Mobile drawer backdrop -->
+<div class="drawer-backdrop" id="drawerBackdrop" onclick="closeSidebar()"></div>
+
+<!-- Mobile FAB button -->
+<button class="fab" onclick="toggleSidebar()" title="Open settings">⚙</button>
 
 <nav>
   <div class="logo-mark">
@@ -834,6 +903,20 @@
   const tracks = [[], [], []];
   let player = null, syncInterval = null, currentVideoId = null;
 
+
+  // ── Mobile sidebar drawer ──
+  function toggleSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const backdrop = document.getElementById('drawerBackdrop');
+    const isOpen = sidebar.classList.contains('open');
+    sidebar.classList.toggle('open', !isOpen);
+    backdrop.classList.toggle('open', !isOpen);
+  }
+
+  function closeSidebar() {
+    document.querySelector('.sidebar').classList.remove('open');
+    document.getElementById('drawerBackdrop').classList.remove('open');
+  }
 
   // ── Info panel tabs ──
   function switchTab(name) {
